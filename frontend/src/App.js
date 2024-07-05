@@ -1,149 +1,124 @@
+
 import React, { useState } from 'react';
-import AssetPriceGraph from './AssetPriceGraph';
-import currencyPairs from './currencyPairs.json';
+import MessageGraph from './MessageGraph';
 import moment from 'moment';
-import axios from 'axios';
 import './App.css';
 import ChatBox from './ChatBox';
+import channelMapping from './message_logs/channel_mapping.json';
+import guildMapping from './message_logs/guild_mapping.json';
 
 function App() {
-  const [currencyPairsState, setCurrencyPairsState] = useState([
+  const [guildChannelState, setGuildChannelState] = useState([
     {
-      base: 'BTC', 
-      quote: 'USD', 
+      guild: '', 
+      channel: '', 
       startDate: moment().subtract(1, 'days').format('YYYY-MM-DDTHH:mm'), 
       endDate: moment().format('YYYY-MM-DDTHH:mm'), 
-      granularity: 3600
     }
   ]);
 
-  const allowedGranularities = [60, 300, 900, 3600, 21600, 86400];
-
-  const handleAddPair = () => {
-    setCurrencyPairsState([
-      ...currencyPairsState,
+  const handleAddSelection = () => {
+    setGuildChannelState([
+      ...guildChannelState,
       {
-        base: 'BTC', 
-        quote: 'USD', 
+        guild: '', 
+        channel: '', 
         startDate: moment().subtract(1, 'days').format('YYYY-MM-DDTHH:mm'), 
         endDate: moment().format('YYYY-MM-DDTHH:mm'), 
-        granularity: 3600
       }
     ]);
   };
 
-  const handleRemovePair = (index) => {
-    setCurrencyPairsState(currencyPairsState.filter((_, i) => i !== index));
+  const handleRemoveSelection = (index) => {
+    setGuildChannelState(guildChannelState.filter((_, i) => i !== index));
   };
 
   const handleChange = (index, field, value) => {
-    const newPairs = [...currencyPairsState];
-    newPairs[index][field] = value;
-
-    if (field === 'base') {
-      newPairs[index].quote = currencyPairs[value][0];
-    }
-
-    if (field === 'startDate' && moment(value).isSameOrAfter(moment(newPairs[index].endDate))) {
-      newPairs[index].startDate = moment(newPairs[index].endDate).subtract(1, 'minutes').format('YYYY-MM-DDTHH:mm');
-    }
-    if (field === 'endDate' && moment(value).isSameOrBefore(moment(newPairs[index].startDate))) {
-      newPairs[index].endDate = moment(newPairs[index].startDate).add(1, 'minutes').format('YYYY-MM-DDTHH:mm');
-    }
-
-    setCurrencyPairsState(newPairs);
+    const newSelections = [...guildChannelState];
+    newSelections[index][field] = value;
+    setGuildChannelState(newSelections);
   };
 
   const setEndDate = (index, value) => {
-    const newPairs = [...currencyPairsState];
-    if (moment(value).isSameOrBefore(moment(newPairs[index].startDate))) {
-      newPairs[index].endDate = moment(newPairs[index].startDate).add(1, 'minutes').format('YYYY-MM-DDTHH:mm');
+    const newSelections = [...guildChannelState];
+    if (moment(value).isSameOrBefore(moment(newSelections[index].startDate))) {
+      newSelections[index].endDate = moment(newSelections[index].startDate).add(1, 'minutes').format('YYYY-MM-DDTHH:mm');
     } else {
-      newPairs[index].endDate = value;
+      newSelections[index].endDate = value;
     }
-    setCurrencyPairsState(newPairs);
+    setGuildChannelState(newSelections);
   };
 
-  const granularityToString = (granularity) => {
-    switch (granularity) {
-      case 60: return "1 Minute";
-      case 300: return "5 Minutes";
-      case 900: return "15 Minutes";
-      case 3600: return "1 Hour";
-      case 21600: return "6 Hours";
-      case 86400: return "1 Day";
-      default: return `${granularity} Seconds`;
-    }
+  const getChannelsByGuild = (guildId) => {
+    return Object.entries(channelMapping).filter(([channelId, { guild_id }]) => guild_id === guildId);
   };
-
-  
 
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Asset Price Tracker</h1>
+        <h1>Message Log Viewer</h1>
         <p>Author: Kaiwen Guo</p>
       </header>
       <div className="main-content">
         <div className="left-half">
-          {currencyPairsState.map((pair, index) => (
+          {guildChannelState.map((selection, index) => (
             <div key={index} style={{ borderBottom: '2px solid #ccc', paddingBottom: '20px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-                <span style={{ fontSize: '24px', marginRight: '10px' }}>{pair.base}</span>
+                <span style={{ fontSize: '24px', marginRight: '10px' }}>Guild: {selection.guild}</span>
                 <span style={{ margin: '0 10px' }}> / </span>
-                <img src={`/image/${pair.quote.toLowerCase()}.png`} alt={pair.quote} style={{ width: 50, height: 50 }} onError={(e) => { e.target.onerror = null; e.target.src="/image/default.png"; }} />
+                <span style={{ fontSize: '24px', marginRight: '10px' }}>Channel: {selection.channel}</span>
               </div>
               <div>
-                <label>Base Currency: </label>
-                <select value={pair.base} onChange={e => handleChange(index, 'base', e.target.value)}>
-                  {Object.keys(currencyPairs).map(base => (
-                    <option key={base} value={base}>{base}</option>
+                <label>Guild: </label>
+                <select
+                  value={selection.guild}
+                  onChange={e => handleChange(index, 'guild', e.target.value)}
+                >
+                  <option value="">Select Guild</option>
+                  {Object.entries(guildMapping).map(([guildId, guildName]) => (
+                    <option key={guildId} value={guildId}>{`${guildName} (${guildId})`}</option>
                   ))}
                 </select>
-                <label>Quote Currency: </label>
-                <select value={pair.quote} onChange={e => handleChange(index, 'quote', e.target.value)}>
-                  {currencyPairs[pair.base].map(quote => (
-                    <option key={quote} value={quote}>{quote}</option>
+                <label>Channel: </label>
+                <select
+                  value={selection.channel}
+                  onChange={e => handleChange(index, 'channel', e.target.value)}
+                  disabled={!selection.guild}
+                >
+                  <option value="">Select Channel</option>
+                  {selection.guild && getChannelsByGuild(selection.guild).map(([channelId, channelInfo]) => (
+                    <option key={channelId} value={channelId}>{`${channelInfo.channel_name} (${channelId})`}</option>
                   ))}
                 </select>
-                <button onClick={() => handleRemovePair(index)}>Remove</button>
+                <button onClick={() => handleRemoveSelection(index)}>Remove</button>
               </div>
               <div>
                 <label>Start Date: </label>
                 <input 
                   type="datetime-local" 
-                  value={pair.startDate} 
+                  value={selection.startDate} 
                   onChange={e => handleChange(index, 'startDate', e.target.value)} 
-                  max={moment(pair.endDate).subtract(1, 'minutes').format('YYYY-MM-DDTHH:mm')}
+                  max={moment(selection.endDate).subtract(1, 'minutes').format('YYYY-MM-DDTHH:mm')}
                 />
                 <label>End Date: </label>
                 <input 
                   type="datetime-local" 
-                  value={pair.endDate} 
+                  value={selection.endDate} 
                   onChange={e => handleChange(index, 'endDate', e.target.value)} 
                   max={moment().format('YYYY-MM-DDTHH:mm')}
-                  min={moment(pair.startDate).add(1, 'minutes').format('YYYY-MM-DDTHH:mm')}
+                  min={moment(selection.startDate).add(1, 'minutes').format('YYYY-MM-DDTHH:mm')}
                 />
-                <label>Granularity: </label>
-                <select value={pair.granularity} onChange={e => handleChange(index, 'granularity', parseInt(e.target.value))}>
-                  {allowedGranularities.map(g => (
-                    <option key={g} value={g}>{granularityToString(g)}</option>
-                  ))}
-                </select>
               </div>
-              <AssetPriceGraph
-                baseCurrency={pair.base}
-                quoteCurrency={pair.quote}
-                startDate={pair.startDate}
-                endDate={pair.endDate}
+              <MessageGraph
+                guild={selection.guild}
+                channel={selection.channel}
+                startDate={selection.startDate}
+                endDate={selection.endDate}
                 setEndDate={(value) => setEndDate(index, value)}
-                granularity={pair.granularity}
-                onGranularityError={() => {}}
               />
             </div>
           ))}
-          <button onClick={handleAddPair}>Add Currency Pair</button>
-           
+          <button onClick={handleAddSelection}>Add Guild/Channel</button>
         </div>
         <div className="right-half">
           <ChatBox onRestart={() => {}} />

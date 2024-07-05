@@ -1,12 +1,10 @@
-require('dotenv').config(); 
+
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 const moment = require('moment-timezone');
-const { exec } = require('child_process');
 const path = require('path');
-const { spawn } = require('child_process');
 const fs = require('fs');
 
 const app = express();
@@ -21,123 +19,61 @@ app.use(rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 }));
 
-// Function to run all_product.js
-const runAllProductScript = () => {
-  exec('node all_product.js', (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error executing all_product.js: ${error.message}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`Error output: ${stderr}`);
-      return;
-    }
-    console.log('all_product.js script output:', stdout);
-  });
-};
-
-// Run all_product.js script on server start
-runAllProductScript();
-
 function isValidDate(dateString) {
   return moment(dateString, moment.ISO_8601, true).isValid();
 }
 
-const allowedGranularities = [60, 300, 900, 3600, 21600, 86400];
+app.get('/api/messages', async (req, res) => {
+  const { guild, channel, start, end, parts } = req.query;
 
-app.get('/api/prices', async (req, res) => {
-  let { start, end, granularity, asset } = req.query;
-
-  const now = moment().toISOString();
-
-  if (!isValidDate(start)) {
-    start = moment().subtract(1, 'days').toISOString();
+  if (!guild || !channel) {
+    return res.status(400).send({
+      message: 'Guild and Channel are required'
+    });
   }
 
-  if (!isValidDate(end) || moment(end).isAfter(now)) {
-    end = now;
-  }
-
-  let numericGranularity = parseInt(granularity);
-  if (isNaN(numericGranularity) || !allowedGranularities.includes(numericGranularity)) {
-    numericGranularity = 3600; // default granularity to 1 hour
+  if (!isValidDate(start) || !isValidDate(end)) {
+    return res.status(400).send({
+      message: 'Invalid date format'
+    });
   }
 
   const startTime = moment(start).valueOf();
   const endTime = moment(end).valueOf();
-  const timeRange = (endTime - startTime) / 1000; // in seconds
-
-  if (timeRange / numericGranularity > 300) {
-    return res.status(400).send({
-      message: 'Granularity too small for the requested time range. Count of aggregations requested exceeds 300.'
-    });
-  }
-
-  const config = {
-    method: 'get',
-    url: `https://api.exchange.coinbase.com/products/${asset}/candles?start=${start}&end=${end}&granularity=${numericGranularity}`,
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  };
+  const numberOfParts = parseInt(parts) || 10; // default to 10 parts
+  const interval = Math.floor((endTime - startTime) / numberOfParts);
 
   try {
-    const response = await axios(config);
-    res.json(response.data);
+    const filePath = path.join(__dirname, 'frontend/src/message_logs', guild, channel, 'message_log.json');
+    if (fs.existsSync(filePath)) {
+      const logData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const filteredMessages = logData.filter(msg => {
+        const msgTime = moment(msg.timestamp).valueOf();
+        return msgTime >= startTime && msgTime <= endTime;
+      });
+
+      const aggregatedMessages = Array.from({ length: numberOfParts }, (_, i) => {
+        const startBucket = startTime + i * interval;
+        const endBucket = startBucket + interval;
+        return {
+          timestamp: new Date(startBucket).toISOString(),
+          messages: filteredMessages.filter(msg => {
+            const msgTime = moment(msg.timestamp).valueOf();
+            return msgTime >= startBucket && msgTime < endBucket;
+          })
+        };
+      });
+
+      res.json(aggregatedMessages);
+    } else {
+      res.status(404).send({
+        message: 'Message log not found for the specified guild and channel'
+      });
+    }
   } catch (error) {
-    console.error('Error fetching candle data:', error.response ? error.response.data : error.message);
-    res.status(500).send('Failed to fetch data.');
+    console.error('Error fetching message logs:', error);
+    res.status(500).send('Failed to fetch message logs.');
   }
-});
-
-app.post('/api/save-data', (req, res) => {
-  const data = req.body;
-
-  if (!data) {
-    console.error('No data provided');
-    return res.status(400).send('No data provided');
-  }
-
-  const filePath = path.join(__dirname, 'saved_data.json');
-
-  fs.writeFile(filePath, JSON.stringify(data, null, 2), (err) => {
-    if (err) {
-      console.error('Error saving data:', err);
-      return res.status(500).send('Failed to save data');
-    }
-    console.log('Data saved successfully');
-    res.send('Data saved successfully');
-  });
-});
-
-app.post('/api/chat', (req, res) => {
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).send('Message is required');
-  }
-
-  const pythonProcess = spawn('python3', ['openai_chat.py', message]);
-
-  let output = '';
-  pythonProcess.stdout.on('data', (data) => {
-    output += data.toString();
-  });
-
-  pythonProcess.stderr.on('data', (data) => {
-    console.error(`Error from Python script: ${data.toString()}`);
-  });
-
-  pythonProcess.on('close', (code) => {
-    if (code !== 0) {
-      return res.status(500).send({ error: 'Failed to get response from OpenAI' });
-    }
-    try {
-      const response = JSON.parse(output);
-      res.json(response);
-    } catch (err) {
-      res.status(500).send({ error: 'Failed to parse response from OpenAI' });
-    }
-  });
 });
 
 const PORT = process.env.PORT || 3000;

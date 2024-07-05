@@ -9,9 +9,9 @@ const ChatBox = ({ onRestart }) => {
     if (inputValue.trim() === '') return;
     setMessages([...messages, { text: inputValue, sender: 'user' }]);
     setInputValue(''); // Clear the input field
-    // Simulate a GPT response
+    // Simulate an AI response
     setTimeout(() => {
-      setMessages(prevMessages => [...prevMessages, { text: 'This is a response from GPT', sender: 'gpt' }]);
+      setMessages(prevMessages => [...prevMessages, { text: 'This is a response from FAMS AI', sender: 'gpt' }]);
     }, 1000);
   };
 
@@ -23,13 +23,13 @@ const ChatBox = ({ onRestart }) => {
   return (
     <div className="chat-box-container">
       <div className="chat-box-header">
-        <h2>Chat with GPT</h2>
+        <h2>Chat with FAMS AI</h2>
         <button className="chat-box-restart" onClick={handleRestart}>Restart</button>
       </div>
       <div className="chat-box-messages">
         {messages.map((message, index) => (
           <div key={index} className={`chat-box-message ${message.sender}`}>
-            <span className="sender-label">{message.sender === 'user' ? 'User' : 'GPT'}: </span>
+            <span className="sender-label">{message.sender === 'user' ? 'User' : 'FAMS AI'}: </span>
             {message.text}
           </div>
         ))}
